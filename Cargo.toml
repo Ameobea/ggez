@@ -57,6 +57,7 @@ nalgebra = {version = "0.18", features = ["mint"] }
 mint = "0.5"
 gilrs = "0.7"
 approx = "0.3"
+fxhash = "0.2"
 
 [dev-dependencies]
 chrono = "0.4"

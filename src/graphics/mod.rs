@@ -415,7 +415,11 @@ pub(crate) struct SamplerCache<B>
 where
     B: BackendSpec,
 {
-    samplers: HashMap<texture::SamplerInfo, gfx::handle::Sampler<B::Resources>>,
+    samplers: HashMap<
+        texture::SamplerInfo,
+        gfx::handle::Sampler<B::Resources>,
+        core::hash::BuildHasherDefault<fxhash::FxHasher64>,
+    >,
 }
 
 impl<B> SamplerCache<B>
@@ -424,7 +428,7 @@ where
 {
     fn new() -> Self {
         SamplerCache {
-            samplers: HashMap::new(),
+            samplers: HashMap::default(),
         }
     }
 
