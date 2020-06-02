@@ -57,6 +57,7 @@ glam = { version = "0.11", features = ["mint"]}
 mint = "0.5"
 gilrs = "0.8"
 approx = "0.4"
+fxhash = "0.2"
 
 [dev-dependencies]
 chrono = "0.4"
