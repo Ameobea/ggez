@@ -144,14 +144,14 @@ pub trait BackendSpec: fmt::Debug {
     /// Creates the window.
     fn init<'a>(
         &self,
-        window_builder: glutin::WindowBuilder,
-        gl_builder: glutin::ContextBuilder<'a>,
-        events_loop: &glutin::EventsLoop,
+        window_builder: glutin::window::WindowBuilder,
+        gl_builder: glutin::ContextBuilder<'a, glutin::NotCurrent>,
+        events_loop: &glutin::event_loop::EventLoop<()>,
         color_format: gfx::format::Format,
         depth_format: gfx::format::Format,
     ) -> Result<
         (
-            glutin::WindowedContext,
+            glutin::WindowedContext<glutin::PossiblyCurrent>,
             Self::Device,
             Self::Factory,
             gfx::handle::RawRenderTargetView<Self::Resources>,
@@ -170,7 +170,7 @@ pub trait BackendSpec: fmt::Debug {
         depth_view: &gfx::handle::RawDepthStencilView<Self::Resources>,
         color_format: gfx::format::Format,
         depth_format: gfx::format::Format,
-        window: &glutin::WindowedContext,
+        window: &glutin::WindowedContext<glutin::PossiblyCurrent>,
     ) -> Option<(
         gfx::handle::RawRenderTargetView<Self::Resources>,
         gfx::handle::RawDepthStencilView<Self::Resources>,
@@ -244,14 +244,14 @@ impl BackendSpec for GlBackendSpec {
 
     fn init<'a>(
         &self,
-        window_builder: glutin::WindowBuilder,
-        gl_builder: glutin::ContextBuilder<'a>,
-        events_loop: &glutin::EventsLoop,
+        window_builder: glutin::window::WindowBuilder,
+        gl_builder: glutin::ContextBuilder<'a, glutin::NotCurrent>,
+        events_loop: &glutin::event_loop::EventLoop<()>,
         color_format: gfx::format::Format,
         depth_format: gfx::format::Format,
     ) -> Result<
         (
-            glutin::WindowedContext,
+            glutin::WindowedContext<glutin::PossiblyCurrent>,
             Self::Device,
             Self::Factory,
             gfx::handle::RawRenderTargetView<Self::Resources>,
@@ -289,7 +289,7 @@ impl BackendSpec for GlBackendSpec {
         depth_view: &gfx::handle::RawDepthStencilView<Self::Resources>,
         color_format: gfx::format::Format,
         depth_format: gfx::format::Format,
-        window: &glutin::WindowedContext,
+        window: &glutin::WindowedContext<glutin::PossiblyCurrent>,
     ) -> Option<(
         gfx::handle::RawRenderTargetView<Self::Resources>,
         gfx::handle::RawDepthStencilView<Self::Resources>,
@@ -867,22 +867,22 @@ pub fn set_window_icon<P: AsRef<Path>>(context: &mut Context, path: Option<P>) -
         }
         None => None,
     };
-    context.gfx_context.window.set_window_icon(icon);
+    context.gfx_context.window.window().set_window_icon(icon);
     Ok(())
 }
 
 /// Sets the window title.
 pub fn set_window_title(context: &Context, title: &str) {
-    context.gfx_context.window.set_title(title);
+    context.gfx_context.window.window().set_title(title);
 }
 
 /// Returns a reference to the Glutin window.
 /// Ideally you should not need to use this because ggez
 /// would provide all the functions you need without having
 /// to dip into Glutin itself.  But life isn't always ideal.
-pub fn window(context: &Context) -> &glutin::Window {
+pub fn window(context: &Context) -> &glutin::window::Window {
     let gfx = &context.gfx_context;
-    &gfx.window
+    gfx.window.window()
 }
 
 /// Returns the size of the window in pixels as (width, height),
@@ -890,20 +890,26 @@ pub fn window(context: &Context) -> &glutin::Window {
 /// Returns zeros if the window doesn't exist.
 pub fn size(context: &Context) -> (f32, f32) {
     let gfx = &context.gfx_context;
-    gfx.window
-        .get_outer_size()
-        .map(|logical_size| (logical_size.width as f32, logical_size.height as f32))
-        .unwrap_or((0.0, 0.0))
+    let winit::dpi::LogicalSize { width, height } = gfx
+        .window
+        .window()
+        .outer_size()
+        .to_logical(gfx.window.window().scale_factor());
+
+    (width, height)
 }
 
 /// Returns the size of the window's underlying drawable in pixels as (width, height).
 /// Returns zeros if window doesn't exist.
 pub fn drawable_size(context: &Context) -> (f32, f32) {
     let gfx = &context.gfx_context;
-    gfx.window
-        .get_inner_size()
-        .map(|logical_size| (logical_size.width as f32, logical_size.height as f32))
-        .unwrap_or((0.0, 0.0))
+    let winit::dpi::LogicalSize { width, height } = gfx
+        .window
+        .window()
+        .inner_size()
+        .to_logical(gfx.window.window().scale_factor());
+
+    (width, height)
 }
 
 /// Returns raw `gfx-rs` state objects, if you want to use `gfx-rs` to write

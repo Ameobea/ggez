@@ -23,8 +23,8 @@ pub enum GameError {
     FilesystemError(String),
     /// An error in the config file
     ConfigError(String),
-    /// Happens when an `winit::EventsLoopProxy` attempts to
-    /// wake up an `winit::EventsLoop` that no longer exists.
+    /// Happens when an `winit::EventLoopProxy` attempts to
+    /// wake up an `winit::EventLoop` that no longer exists.
     EventLoopError(String),
     /// An error trying to load a resource, such as getting an invalid image file.
     ResourceLoadError(String),
@@ -195,8 +195,8 @@ impl From<gfx::shade::ProgramError> for GameError {
     }
 }
 
-impl From<winit::EventsLoopClosed> for GameError {
-    fn from(_: glutin::EventsLoopClosed) -> GameError {
+impl<T: 'static> From<winit::event_loop::EventLoopClosed<T>> for GameError {
+    fn from(_: winit::event_loop::EventLoopClosed<T>) -> GameError {
         let e = "An event loop proxy attempted to wake up an event loop that no longer exists."
             .to_owned();
         GameError::EventLoopError(e)

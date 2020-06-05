@@ -18,7 +18,7 @@ use winit::{self, dpi};
 // and look forward to ripping it all out and replacing it with newer winit.
 
 /// A mouse button.
-pub use winit::MouseButton;
+pub use winit::event::MouseButton;
 
 /// An analog axis of some device (gamepad thumbstick, joystick...).
 pub use gilrs::Axis;
@@ -27,7 +27,7 @@ pub use gilrs::Button;
 
 /// `winit` events; nested in a module for re-export neatness.
 pub mod winit_event {
-    pub use super::winit::{
+    pub use super::winit::event::{
         DeviceEvent, ElementState, Event, KeyboardInput, ModifiersState, MouseScrollDelta,
         TouchPhase, WindowEvent,
     };
@@ -37,7 +37,7 @@ pub use crate::input::keyboard::{KeyCode, KeyMods};
 
 use self::winit_event::*;
 /// `winit` event loop.
-pub use winit::EventsLoop;
+pub use winit::event_loop::EventLoop;
 
 use crate::context::Context;
 use crate::error::GameResult;
@@ -160,106 +160,107 @@ pub fn quit(ctx: &mut Context) {
 ///
 /// It does not try to do any type of framerate limiting.  See the
 /// documentation for the [`timer`](../timer/index.html) module for more info.
-pub fn run<S>(ctx: &mut Context, events_loop: &mut EventsLoop, state: &mut S) -> GameResult
+#[allow(unsafe_code)]
+pub fn run<S>(ctx: &mut Context, event_loop: EventLoop<()>, state: &mut S) -> !
 where
-    S: EventHandler,
+    S: EventHandler + 'static,
 {
     use crate::input::{keyboard, mouse};
 
-    while ctx.continuing {
-        // If you are writing your own event loop, make sure
-        // you include `timer_context.tick()` and
-        // `ctx.process_event()` calls.  These update ggez's
-        // internal state however necessary.
-        ctx.timer_context.tick();
-        events_loop.poll_events(|event| {
-            ctx.process_event(&event);
-            match event {
-                Event::WindowEvent { event, .. } => match event {
-                    WindowEvent::Resized(logical_size) => {
-                        // let actual_size = logical_size;
-                        state.resize_event(
-                            ctx,
-                            logical_size.width as f32,
-                            logical_size.height as f32,
-                        );
+    // This is safe since `event_loop.run` never exits until program termination
+    let ctx: &'static mut Context = unsafe { std::mem::transmute(ctx) };
+    let state: &'static mut S = unsafe { std::mem::transmute(&mut *state) };
+
+    // If you are writing your own event loop, make sure
+    // you include `timer_context.tick()` and
+    // `ctx.process_event()` calls.  These update ggez's
+    // internal state however necessary.
+    ctx.timer_context.tick();
+    event_loop.run(move |event, _window_target, _control_flow| {
+        ctx.process_event(&event);
+        match event {
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::Resized(logical_size) => {
+                    // let actual_size = logical_size;
+                    state.resize_event(ctx, logical_size.width as f32, logical_size.height as f32);
+                }
+                WindowEvent::CloseRequested => {
+                    if !state.quit_event(ctx) {
+                        quit(ctx);
                     }
-                    WindowEvent::CloseRequested => {
-                        if !state.quit_event(ctx) {
-                            quit(ctx);
+                }
+                WindowEvent::Focused(gained) => {
+                    state.focus_event(ctx, gained);
+                }
+                WindowEvent::ReceivedCharacter(ch) => {
+                    state.text_input_event(ctx, ch);
+                }
+                WindowEvent::KeyboardInput {
+                    input:
+                        KeyboardInput {
+                            state: ElementState::Pressed,
+                            virtual_keycode: Some(keycode),
+                            modifiers,
+                            ..
+                        },
+                    ..
+                } => {
+                    let repeat = keyboard::is_key_repeated(ctx);
+                    state.key_down_event(ctx, keycode, modifiers.into(), repeat);
+                }
+                WindowEvent::KeyboardInput {
+                    input:
+                        KeyboardInput {
+                            state: ElementState::Released,
+                            virtual_keycode: Some(keycode),
+                            modifiers,
+                            ..
+                        },
+                    ..
+                } => {
+                    state.key_up_event(ctx, keycode, modifiers.into());
+                }
+                WindowEvent::MouseWheel { delta, .. } => {
+                    let (x, y) = match delta {
+                        MouseScrollDelta::LineDelta(x, y) => (x, y),
+                        MouseScrollDelta::PixelDelta(dpi::LogicalPosition { x, y }) => {
+                            (x as f32, y as f32)
+                        }
+                    };
+                    state.mouse_wheel_event(ctx, x, y);
+                }
+                WindowEvent::MouseInput {
+                    state: element_state,
+                    button,
+                    ..
+                } => {
+                    let position = mouse::position(ctx);
+                    match element_state {
+                        ElementState::Pressed => {
+                            state.mouse_button_down_event(ctx, button, position.x, position.y)
+                        }
+                        ElementState::Released => {
+                            state.mouse_button_up_event(ctx, button, position.x, position.y)
                         }
                     }
-                    WindowEvent::Focused(gained) => {
-                        state.focus_event(ctx, gained);
-                    }
-                    WindowEvent::ReceivedCharacter(ch) => {
-                        state.text_input_event(ctx, ch);
-                    }
-                    WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                state: ElementState::Pressed,
-                                virtual_keycode: Some(keycode),
-                                modifiers,
-                                ..
-                            },
-                        ..
-                    } => {
-                        let repeat = keyboard::is_key_repeated(ctx);
-                        state.key_down_event(ctx, keycode, modifiers.into(), repeat);
-                    }
-                    WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                state: ElementState::Released,
-                                virtual_keycode: Some(keycode),
-                                modifiers,
-                                ..
-                            },
-                        ..
-                    } => {
-                        state.key_up_event(ctx, keycode, modifiers.into());
-                    }
-                    WindowEvent::MouseWheel { delta, .. } => {
-                        let (x, y) = match delta {
-                            MouseScrollDelta::LineDelta(x, y) => (x, y),
-                            MouseScrollDelta::PixelDelta(dpi::LogicalPosition { x, y }) => {
-                                (x as f32, y as f32)
-                            }
-                        };
-                        state.mouse_wheel_event(ctx, x, y);
-                    }
-                    WindowEvent::MouseInput {
-                        state: element_state,
-                        button,
-                        ..
-                    } => {
-                        let position = mouse::position(ctx);
-                        match element_state {
-                            ElementState::Pressed => {
-                                state.mouse_button_down_event(ctx, button, position.x, position.y)
-                            }
-                            ElementState::Released => {
-                                state.mouse_button_up_event(ctx, button, position.x, position.y)
-                            }
-                        }
-                    }
-                    WindowEvent::CursorMoved { .. } => {
-                        let position = mouse::position(ctx);
-                        let delta = mouse::delta(ctx);
-                        state.mouse_motion_event(ctx, position.x, position.y, delta.x, delta.y);
-                    }
-                    _x => {
-                        // trace!("ignoring window event {:?}", x);
-                    }
-                },
-                Event::DeviceEvent { event, .. } => match event {
-                    _ => (),
-                },
-                Event::Awakened => (),
-                Event::Suspended(_) => (),
-            }
-        });
+                }
+                WindowEvent::CursorMoved { .. } => {
+                    let position = mouse::position(ctx);
+                    let delta = mouse::delta(ctx);
+                    state.mouse_motion_event(ctx, position.x, position.y, delta.x, delta.y);
+                }
+                _x => {
+                    // trace!("ignoring window event {:?}", x);
+                }
+            },
+            Event::DeviceEvent { event, .. } => match event {
+                _ => (),
+            },
+            Event::Resumed => (),
+            Event::Suspended => (),
+            _ => unimplemented!(),
+        }
+
         // Handle gamepad events if necessary.
         if ctx.conf.modules.gamepad {
             while let Some(gilrs::Event { id, event, .. }) = ctx.gamepad_context.next_event() {
@@ -277,9 +278,8 @@ where
                 }
             }
         }
-        state.update(ctx)?;
-        state.draw(ctx)?;
-    }
 
-    Ok(())
+        state.update(ctx).expect("Error while updating state");
+        state.draw(ctx).expect("Error while drawing");
+    });
 }

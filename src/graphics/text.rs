@@ -1,7 +1,8 @@
 use glyph_brush::GlyphPositioner;
-use glyph_brush::{self, FontId, Layout, SectionText, VariedSection};
-pub use glyph_brush::{rusttype::Scale, HorizontalAlign as Align};
+pub use glyph_brush::HorizontalAlign as Align;
+use glyph_brush::{self, FontId, Layout, Section, SectionText};
 use mint;
+pub use rusttype::Scale;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::f32;
@@ -237,23 +238,23 @@ impl Text {
         &self,
         relative_dest: Point2,
         color: Option<Color>,
-    ) -> VariedSection {
-        let sections: Vec<SectionText> = self
+    ) -> glyph_brush::Section {
+        let sections: Vec<glyph_brush::Text> = self
             .fragments
             .iter()
             .map(|fragment| {
-                let color = fragment.color.or(color).unwrap_or(WHITE);
                 let font_id = fragment
                     .font
                     .map(|font| font.font_id)
                     .unwrap_or(self.font_id);
                 let scale = fragment.scale.unwrap_or(self.font_scale);
-                SectionText {
-                    text: &fragment.text,
-                    color: <[f32; 4]>::from(color),
-                    font_id,
-                    scale,
-                }
+
+                glyph_brush::Text::new(&fragment.text)
+                    .with_scale(glyph_brush::ab_glyph::PxScale {
+                        x: scale.x,
+                        y: scale.y,
+                    })
+                    .with_font_id(font_id)
             })
             .collect();
 
@@ -277,7 +278,8 @@ impl Text {
             dest_x
         };
         let relative_dest = (relative_dest_x, relative_dest.y);
-        VariedSection {
+
+        Section {
             screen_position: relative_dest,
             bounds: (self.bounds.x, self.bounds.y),
             layout: self.layout,
@@ -321,19 +323,25 @@ impl Text {
         let mut max_width = 0;
         let mut max_height = 0;
         {
-            let varied_section = self.generate_varied_section(Point2::new(0.0, 0.0), None);
+            use glyph_brush::ab_glyph::Font;
             use glyph_brush::GlyphCruncher;
-            let glyphs = context.gfx_context.glyph_brush.glyphs(varied_section);
-            for positioned_glyph in glyphs {
-                if let Some(rect) = positioned_glyph.pixel_bounding_box() {
-                    let font = positioned_glyph.font().expect("Glyph doesn't have a font");
-                    let v_metrics = font.v_metrics(positioned_glyph.scale());
-                    let max_y = positioned_glyph.position().y + positioned_glyph.scale().y
-                        - v_metrics.ascent;
-                    let max_y = max_y.ceil() as u32;
-                    max_width = std::cmp::max(max_width, rect.max.x as u32);
-                    max_height = std::cmp::max(max_height, max_y);
-                }
+
+            let varied_section = self.generate_varied_section(Point2::new(0.0, 0.0), None);
+
+            if let Some(bounds) = context
+                .gfx_context
+                .glyph_brush
+                .glyph_bounds(&varied_section)
+            {
+                let font = context
+                    .gfx_context
+                    .glyph_brush
+                    .fonts()
+                    .first()
+                    .expect("Glyph doesn't have a font");
+
+                max_width = (bounds.width() - font.ascent_unscaled()) as u32;
+                max_height = bounds.height() as u32;
             }
         }
         let (width, height) = (max_width, max_height);
@@ -408,10 +416,11 @@ impl Font {
     /// Loads a new TrueType font from given bytes and into a `gfx::GlyphBrush` owned
     /// by the `Context`.
     pub fn new_glyph_font_bytes(context: &mut Context, bytes: &[u8]) -> GameResult<Self> {
-        // Take a Cow here to avoid this clone where unnecessary?
-        // Nah, let's not complicate things more than necessary.
-        let v = bytes.to_vec();
-        let font_id = context.gfx_context.glyph_brush.add_font_bytes(v);
+        let font =
+            glyph_brush::ab_glyph::FontArc::try_from_vec(bytes.to_owned()).map_err(|err| {
+                GameError::FontError(format!("Error while loading font from bytes: {:?}", err))
+            })?;
+        let font_id = context.gfx_context.glyph_brush.add_font(font);
 
         Ok(Font { font_id })
     }
@@ -449,7 +458,7 @@ where
 /// level control over how text is drawn.
 pub fn queue_text_raw<'a, S, G>(context: &mut Context, section: S, custom_layout: Option<&G>)
 where
-    S: Into<Cow<'a, VariedSection<'a>>>,
+    S: Into<Cow<'a, glyph_brush::Section<'a>>>,
     G: GlyphPositioner,
 {
     let brush = &mut context.gfx_context.glyph_brush;
@@ -486,7 +495,18 @@ where
     let backend = &ctx.gfx_context.backend_spec;
 
     let action = gb.process_queued(
-        |rect, tex_data| update_texture::<GlBackendSpec>(backend, encoder, gc, rect, tex_data),
+        |rect, tex_data| {
+            update_texture::<GlBackendSpec>(
+                backend,
+                encoder,
+                gc,
+                glyph_brush::Rectangle {
+                    min: rect.min,
+                    max: rect.max,
+                },
+                tex_data,
+            )
+        },
         to_vertex,
     );
     match action {
@@ -531,12 +551,12 @@ fn update_texture<B>(
     backend: &B,
     encoder: &mut gfx::Encoder<B::Resources, B::CommandBuffer>,
     texture: &gfx::handle::RawTexture<B::Resources>,
-    rect: glyph_brush::rusttype::Rect<u32>,
+    rect: glyph_brush::Rectangle<u32>,
     tex_data: &[u8],
 ) where
     B: BackendSpec,
 {
-    let offset = [rect.min.x as u16, rect.min.y as u16];
+    let offset = [rect.min[0] as u16, rect.min[1] as u16];
     let size = [rect.width() as u16, rect.height() as u16];
     let info = texture::ImageInfoCommon {
         xoffset: offset[0],
@@ -574,10 +594,8 @@ fn to_vertex(v: glyph_brush::GlyphVertex) -> DrawParam {
     // it LOOKS like pixel_coords are the output coordinates?
     // I'm not sure though...
     let dest_pt = Point2::new(v.pixel_coords.min.x as f32, v.pixel_coords.min.y as f32);
-    DrawParam::default()
-        .src(src_rect)
-        .dest(dest_pt)
-        .color(v.color.into())
+    DrawParam::default().src(src_rect).dest(dest_pt)
+    // .color(v.color.into())
 }
 
 #[cfg(test)]

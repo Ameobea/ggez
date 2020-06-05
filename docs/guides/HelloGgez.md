@@ -3,8 +3,9 @@
 This is a guide to create a program that prints `Hello ggez! dt = 78986ns` every frame.
 
 At the end of this guide you will:
-*  Have created a simple program using `ggez`
-*  Know the basic scaffolding of a `ggez` program
+
+- Have created a simple program using `ggez`
+- Know the basic scaffolding of a `ggez` program
 
 ## ⚠ Prerequisites
 
@@ -56,6 +57,7 @@ It is why we're here after all.
 
 First we'll tell Rust we want to use `ggez`.
 Add this to the top of your `src/main.rs`:
+
 ```rust,skt-definition,no_run
 use ggez::*;
 ```
@@ -80,6 +82,7 @@ This means it is intended to be implemented on a struct.
 There are quite a few callbacks defined on the Trait, but only [2 are required: update and draw](https://docs.rs/ggez/0.4.0/ggez/event/trait.EventHandler.html#required-methods).
 
 Let's add `EventHandler` to our `src/main.rs` file:
+
 ```rust,skt-definition,no_run
 struct State {}
 
@@ -105,6 +108,7 @@ What is included in your state is very dependent on the game you are making.
 But, we're not going to write any bugs right? 😉
 
 In your main, you will need to create an instance of `State`.
+
 ```rust,skt-definition-no-main,no_run
 pub fn main() {
     let state = &mut State { };
@@ -116,6 +120,7 @@ pub fn main() {
 Test to make sure everything is correct by running `cargo run`.
 
 You should see this:
+
 ```
 warning: unused variable: `state`
   --> src\main.rs:19:9
@@ -156,6 +161,7 @@ Now is the time for us to interface with our hardware and do something fun.
 To do that, you need to create a [`Context`](https://docs.rs/ggez/0.4.0/ggez/struct.Context.html) courtesy of `ggez`.
 
 Add this to the end of your `main` fn:
+
 ```rust,skt-expression,no_run
 let c = conf::Conf::new();
 let (ref mut ctx, ref mut event_loop) = ContextBuilder::new("hello_ggez", "awesome_person")
@@ -165,12 +171,13 @@ let (ref mut ctx, ref mut event_loop) = ContextBuilder::new("hello_ggez", "aweso
 ```
 
 This will create a `Context` with the `game_id` `hello_ggez` and the author `awesome_person`.
-It will also create an [`EventsLoop`](https://docs.rs/ggez/0.4.0/event/struct.EventsLoop.html).
+It will also create an [`EventLoop`](https://docs.rs/ggez/0.4.0/event/struct.EventLoop.html).
 We'll need it in a minute to call [`run`](https://docs.rs/ggez/0.4.0/ggez/event/fn.run.html).
 Feel free to replace the author with yourself.
 You are awesome after all.
 
 Now you're ready to kick off the loop!
+
 ```rust,skt-expression,no_run
 event::run(ctx, event_loop, state).unwrap();
 ```
@@ -180,6 +187,7 @@ event::run(ctx, event_loop, state).unwrap();
 Once again run `cargo run`
 
 You should get 2 warnings:
+
 ```
 warning: unused variable: `ctx`
  --> src\main.rs:9:24
@@ -213,20 +221,24 @@ For this program, we want to display the duration of each frame in the console a
 How should we do that? Well, let's look at the 2 callbacks we have in our loop and our `State` struct.
 
 There is some information we want to track, so we'll modify `State` first.
+
 ```rust,skt-definition,no_run
 struct State {
     dt: std::time::Duration,
 }
 ```
+
 `dt` is going to represent the time each frame has taken. It stands for "delta time" and is a useful metric for games to handle variable frame rates.
 
 Now in `main`, you need to update the `State` instantiation to include `dt`:
+
 ```rust,skt-expression,no_run
 let state = &mut State { dt: std::time::Duration::new(0, 0) };
 ```
 
 So now that we have state to update, let's update it in our `update` callback!
 We'll use [`timer::delta`](https://docs.rs/ggez/0.4.0/ggez/timer/fn.delta.html) to get the delta time.
+
 ```rust,skt-update,no_run
 fn update(&mut self, ctx: &mut Context) -> GameResult {
     self.dt = timer::delta(ctx);
@@ -235,6 +247,7 @@ fn update(&mut self, ctx: &mut Context) -> GameResult {
 ```
 
 To see the changes in `State`, you need to modify the `draw` callback.
+
 ```rust,skt-draw,no_run
 fn draw(&mut self, ctx: &mut Context) -> GameResult {
     println!("Hello ggez! dt = {}ns", self.dt.subsec_nanos());
@@ -256,8 +269,8 @@ You've successfully bootstrapped a `ggez` program.
 
 If you are looking to push yourself a bit further on your own, these challenges are for you.
 
-* Display the time in milliseconds or seconds instead of nanoseconds
-* Print the text to the window instead of the console
-* Limit the framerate to 30fps
-* Use another callback on `EventHandler` to do something fun
-* Change the size or title of the window that appears
+- Display the time in milliseconds or seconds instead of nanoseconds
+- Print the text to the window instead of the console
+- Limit the framerate to 30fps
+- Use another callback on `EventHandler` to do something fun
+- Change the size or title of the window that appears
